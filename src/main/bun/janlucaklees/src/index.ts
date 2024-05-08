@@ -10,9 +10,6 @@ const numWorkers: number = os.cpus().length - 1;
 // Constants
 const LINE_BREAK = 10;
 
-// Get a text decoder.
-const decoder = new TextDecoder("utf-8");
-
 // Setup workers.
 const workers = setupWorkers(numWorkers);
 
