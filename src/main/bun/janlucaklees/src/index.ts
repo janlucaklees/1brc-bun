@@ -1,52 +1,76 @@
 import os from "os";
-
 import type LocationData from "./types/LocationData";
 
 // Settings
-// This is roughly double the size of one chunk from the stream reader, at least on my system.
-const initialBufferSize = 51200;
-const numWorkers: number = os.cpus().length - 1;
+const initialBufferSize = 512000;
+const numWorkers: number = os.cpus().length;
 
 // Constants
 const LINE_BREAK = 10;
 
+//
+// Setup
 // Setup workers.
 const workers = setupWorkers(numWorkers);
 
 // Set initial values.
-let currentBufferSize = initialBufferSize;
-let buffer: Uint8Array = new Uint8Array(currentBufferSize);
-let currentLength = 0;
-let usableLength = 0;
-let currentWorker = 0;
+var currentBufferSize = initialBufferSize;
+var buffer: Uint8Array = new Uint8Array(currentBufferSize);
+var currentLength = 0;
+var usableLength = 0;
+var currentWorker = 0;
 
-// Read the file as a stream.
+//
+// Read the file as a stream and process it.
 const stream = Bun.file(Bun.argv[2]).stream();
-
 // Process the file
 for await (const chunk of stream) {
   handleChunk(chunk);
 }
+// Process what is leftover in the buffer.
+handleChunk(new Uint8Array(0), true);
 
-// Wait for workers to terminate and return their computed data then merge it.
-const locationsMap = mergeWorkerData(await Promise.all(flushWorkers()));
+//
+// Wait for workers to terminate and return their computed data.
+const aggregate = await Promise.all(flushWorkers());
 
+//
+// Merge the processed data from all workers together.
+const locationsMap = mergeWorkerData(aggregate);
+
+//
 // Sort Locations
-const locations = Array.from(locationsMap.keys());
-locations.sort();
+const locations = Array.from(locationsMap.values());
+const sortedLocations = locations.sort((locationA, locationB) => {
+  const locationAName = locationA.name;
+  const locationBName = locationB.name;
 
+  let order;
+  let i = 0;
+  do {
+    order = locationAName[i] - locationBName[i];
+    i++;
+  } while (order === 0 && i < locationAName.length && i < locationBName.length);
+
+  return order;
+});
+
+//
 // Print locations
-let result =
-  "{" +
-  locations
-    .map((location) => {
-      const data = locationsMap.get(location)!;
-      return `${location}=${(data.minTemperature / 10).toFixed(1)}/${(data.measurementSum / data.measurementCount / 10).toFixed(1)}/${(data.maxTemperature / 10).toFixed(1)}`;
-    })
-    .join(", ") +
-  "}";
-
-console.log(result);
+let output;
+let separator = "";
+Bun.write(Bun.stdout, "{");
+for (let i = 0; i < sortedLocations.length; i++) {
+  const location = sortedLocations[i];
+  Bun.write(Bun.stdout, separator);
+  Bun.write(Bun.stdout, location.name);
+  Bun.write(
+    Bun.stdout,
+    `=${(location.minTemperature / 10).toFixed(1)}/${(location.measurementSum / location.measurementCount / 10).toFixed(1)}/${(location.maxTemperature / 10).toFixed(1)}`
+  );
+  separator = ", ";
+}
+Bun.write(Bun.stdout, "}\n");
 
 /******************************************************************************
  * Functions
@@ -62,9 +86,9 @@ function setupWorkers(numWorkers: number) {
   return workers;
 }
 
-function handleChunk(chunk: Uint8Array) {
+function handleChunk(chunk: Uint8Array, forceFlush = false) {
   // Check whether we need to flush the buffer
-  if (currentLength + chunk.length > currentBufferSize) {
+  if (currentLength + chunk.length > currentBufferSize || forceFlush) {
     // Find the last line-break (10 in a Uint8Array), so that we know up until where we can use the contents of the buffer.
     for (let i = currentLength - 1; i >= 0; i--) {
       if (buffer[i] === LINE_BREAK) {

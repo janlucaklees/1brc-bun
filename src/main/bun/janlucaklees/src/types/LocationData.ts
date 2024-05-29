@@ -1,4 +1,5 @@
 type LocationData = {
+  name: Uint8Array;
   measurementCount: number;
   measurementSum: number;
   minTemperature: number;

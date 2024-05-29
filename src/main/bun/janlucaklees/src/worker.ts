@@ -9,8 +9,7 @@ const DOT = 46;
 const ZERO = 48;
 const SEMICOLON = 59;
 
-const decoder = new TextDecoder();
-const locationMap = new Map<string, LocationData>();
+const locationMap = new Map<number, LocationData>();
 
 self.onmessage = (event: MessageEvent) => {
   const lines: Uint8Array = event.data;
@@ -26,12 +25,18 @@ self.onmessage = (event: MessageEvent) => {
   while (i < lines.length) {
     const locationStart = i;
 
+    // While determining the length of the locations name, we hash it.
+    let locationHash = 0;
     while (lines[i] !== SEMICOLON) {
+      // Kudos: https://stackoverflow.com/a/7616484
+      const char = lines[i];
+      locationHash = (locationHash << 5) - locationHash + char;
+      locationHash |= 0; // Convert to 32bit integer
       i++;
     }
 
     // Get the location name.
-    const location = decoder.decode(lines.subarray(locationStart, i));
+    const locationName = lines.subarray(locationStart, i);
 
     // Process the temperature
     let temp: number;
@@ -67,14 +72,15 @@ self.onmessage = (event: MessageEvent) => {
     // Make sure the number has the correct sign.
     temp = temp * negator;
 
-    if (locationMap.has(location)) {
-      const locationData = locationMap.get(location)!;
+    if (locationMap.has(locationHash)) {
+      const locationData = locationMap.get(locationHash)!;
       locationData.measurementCount++;
       locationData.measurementSum += temp;
       locationData.maxTemperature = Math.max(locationData.maxTemperature, temp);
       locationData.minTemperature = Math.min(locationData.minTemperature, temp);
     } else {
-      locationMap.set(location, {
+      locationMap.set(locationHash, {
+        name: locationName,
         measurementCount: 1,
         measurementSum: temp,
         minTemperature: temp,
