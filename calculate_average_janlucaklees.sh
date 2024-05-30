@@ -15,4 +15,4 @@
 #  limitations under the License.
 #
 
-time bun run src/main/bun/janlucaklees/index.ts measurements.txt
+time bun run src/main/bun/janlucaklees/src/index.ts measurements.txt
